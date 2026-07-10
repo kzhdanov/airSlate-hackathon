@@ -82,6 +82,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [guideTab, setGuideTab] = useState<GuideKey | null>(null);
+  const [hintSample, setHintSample] = useState(false);
 
   const agreementPreRef = useRef<HTMLPreElement>(null);
 
@@ -110,6 +111,18 @@ export default function Home() {
     }, 1400);
     return () => clearInterval(id);
   }, [phase, streaming]);
+
+  // Nudge idle visitors toward the samples: if nothing has been uploaded after
+  // 3s on the upload screen, light up the first sample card with a golden
+  // running outline. Any move off the idle screen clears it.
+  useEffect(() => {
+    if (phase !== "idle" || file) {
+      setHintSample(false);
+      return;
+    }
+    const id = setTimeout(() => setHintSample(true), 3000);
+    return () => clearTimeout(id);
+  }, [phase, file]);
 
   async function handleFile(f: File) {
     if (f.type !== "application/pdf") {
@@ -320,8 +333,10 @@ export default function Home() {
                   </span>
                 </label>
 
-                <div className="mt-[22px] flex flex-wrap items-center gap-2.5">
-                  <span className="text-[12.5px] text-muted">No PDF yet? Save your chat first:</span>
+                <div className="mt-[22px] flex flex-wrap items-center gap-x-2.5 gap-y-2">
+                  <span className="basis-full text-[12.5px] text-muted sm:basis-auto">
+                    No PDF yet? Save your chat first:
+                  </span>
                   {(["gmail", "whatsapp", "telegram"] as GuideKey[]).map((k) => (
                     <button
                       key={k}
@@ -341,13 +356,17 @@ export default function Home() {
                     </span>
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {SAMPLES.map((s) => {
+                    {SAMPLES.map((s, i) => {
                       const Icon = s.icon;
+                      const hinted = i === 0 && hintSample;
                       return (
                         <button
                           key={s.file}
                           onClick={() => loadSample(s.file)}
-                          className="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
+                          onMouseEnter={() => setHintSample(false)}
+                          className={`flex items-center gap-3 rounded-[14px] border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_color-mix(in_srgb,var(--color-accent)_18%,transparent)] ${
+                            hinted ? "ab-hint" : ""
+                          }`}
                         >
                           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-hero text-accent">
                             <Icon size={19} strokeWidth={1.9} />

@@ -180,6 +180,30 @@ button:disabled,
   }
 }
 
+/* ── Golden running outline ────────────────────────────────────────────────
+   A hint that draws the eye to the first sample thread when the visitor has
+   been idle. A golden arc chases around the border (masked to a ring) while
+   the card breathes a soft amber glow. */
+@property --ab-hint-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes ab-hint-spin {
+  to {
+    --ab-hint-angle: 360deg;
+  }
+}
+@keyframes ab-hint-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, #e6a53a 20%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 18px 2px color-mix(in srgb, #f6d074 34%, transparent);
+  }
+}
+
 .ab-rise {
   animation: ab-rise 0.4s ease both;
 }
@@ -206,4 +230,35 @@ button:disabled,
 }
 .ab-ring {
   animation: ab-ring 1s ease-out infinite;
+}
+.ab-hint {
+  position: relative;
+  animation: ab-hint-glow 2.4s ease-in-out infinite;
+}
+.ab-hint::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 2px; /* ring thickness */
+  /* warm golden comet: champagne → amber → brand accent */
+  background: conic-gradient(
+    from var(--ab-hint-angle),
+    transparent 0deg,
+    transparent 180deg,
+    color-mix(in srgb, #f6d074 40%, transparent) 240deg,
+    #f6d074 290deg,
+    #e6a53a 320deg,
+    var(--color-accent) 345deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  /* one steady, unhurried lap around the border */
+  animation: ab-hint-spin 4s linear infinite;
+  pointer-events: none;
 }

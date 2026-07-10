@@ -1,4 +1,13 @@
-import { $getRoot, $isElementNode, $isLineBreakNode, $isTextNode, type LexicalEditor } from "lexical";
+import {
+  $getRoot,
+  $isElementNode,
+  $isLineBreakNode,
+  $isTextNode,
+  type ElementNode,
+  type LexicalEditor,
+} from "lexical";
+import { $isListNode } from "@lexical/list";
+import { $isHeadingNode } from "@lexical/rich-text";
 
 // The editor content, flattened into paragraphs of formatted runs. This is the
 // single source the three exporters share, so PDF / Word / Print stay in sync
@@ -6,26 +15,52 @@ import { $getRoot, $isElementNode, $isLineBreakNode, $isTextNode, type LexicalEd
 type Run = { text: string; bold: boolean; italic: boolean } | { br: true };
 type Block = Run[];
 
+// Collect the inline runs inside one element (text + soft breaks), recursing
+// through any wrapping inline elements (e.g. links).
+function inlineRuns(node: ElementNode): Run[] {
+  const runs: Run[] = [];
+  for (const child of node.getChildren()) {
+    if ($isLineBreakNode(child)) runs.push({ br: true });
+    else if ($isTextNode(child))
+      runs.push({
+        text: child.getTextContent(),
+        bold: child.hasFormat("bold"),
+        italic: child.hasFormat("italic"),
+      });
+    else if ($isElementNode(child)) runs.push(...inlineRuns(child));
+  }
+  return runs;
+}
+
+// Leading whitespace for an indented block (4 spaces per indent level).
+const pad = (level: number): Run[] =>
+  level > 0 ? [{ text: "    ".repeat(level), bold: false, italic: false }] : [];
+
 function readBlocks(editor: LexicalEditor): Block[] {
-  return editor.getEditorState().read(() =>
-    $getRoot()
-      .getChildren()
-      .map((block) => {
-        const runs: Block = [];
-        if ($isElementNode(block)) {
-          for (const child of block.getChildren()) {
-            if ($isLineBreakNode(child)) runs.push({ br: true });
-            else if ($isTextNode(child))
-              runs.push({
-                text: child.getTextContent(),
-                bold: child.hasFormat("bold"),
-                italic: child.hasFormat("italic"),
-              });
-          }
+  return editor.getEditorState().read(() => {
+    const blocks: Block[] = [];
+    for (const node of $getRoot().getChildren()) {
+      if ($isListNode(node)) {
+        // one exported line per item, with a bullet or number prefix
+        const ordered = node.getListType() === "number";
+        let n = 1;
+        for (const item of node.getChildren()) {
+          if (!$isElementNode(item)) continue;
+          const prefix = ordered ? `${n++}. ` : "• ";
+          blocks.push([...pad(item.getIndent()), { text: prefix, bold: false, italic: false }, ...inlineRuns(item)]);
         }
-        return runs;
-      }),
-  );
+      } else if ($isElementNode(node)) {
+        const runs = [...pad(node.getIndent()), ...inlineRuns(node)];
+        // headings carry through as bold so they stand out in the document
+        if ($isHeadingNode(node))
+          runs.forEach((r) => {
+            if (!("br" in r)) r.bold = true;
+          });
+        blocks.push(runs);
+      }
+    }
+    return blocks;
+  });
 }
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
