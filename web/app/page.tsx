@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { ContractField } from "@/lib/fields";
 
 type Phase = "idle" | "extracting" | "form" | "generating" | "done";
@@ -100,8 +101,24 @@ export default function Home() {
       <header>
         <h1 className="text-3xl font-bold">Agreement Builder</h1>
         <p className="mt-2 text-gray-500">
-          Upload a PDF where two parties discuss a deal — we&apos;ll extract the agreed terms,
-          let you fill in the gaps, and draft a ready-to-sign contract.
+          Been going back and forth with a contractor and finally ready to sign? With our
+          service it&apos;s a breeze — just upload your correspondence as a PDF and we&apos;ll
+          turn it into a ready-to-sign contract.
+        </p>
+        <p className="mt-3 text-sm text-gray-500">
+          Need to turn your chat into a PDF first? See how for{" "}
+          <Link href="/guides/gmail" className="text-blue-600 hover:underline">
+            Gmail
+          </Link>
+          ,{" "}
+          <Link href="/guides/whatsapp" className="text-blue-600 hover:underline">
+            WhatsApp
+          </Link>
+          , or{" "}
+          <Link href="/guides/telegram" className="text-blue-600 hover:underline">
+            Telegram
+          </Link>
+          .
         </p>
       </header>
 
