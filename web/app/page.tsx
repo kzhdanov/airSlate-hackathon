@@ -24,6 +24,15 @@ import GuidesModal from "./_components/GuidesModal";
 
 type Phase = "idle" | "extracting" | "form" | "generating" | "done";
 
+// The three stable screens that live in the URL hash. The transitional phases
+// (extracting/generating) are deliberately absent — they're steps inside a
+// transition, not screens, so they never touch the hash.
+const SCREEN_OF_PHASE: Partial<Record<Phase, string>> = {
+  idle: "upload",
+  form: "review",
+  done: "draft",
+};
+
 // Rotating status lines shown while a phase waits on the model. Rendered as a
 // checklist that lights up in sequence — eye-candy over the real async call.
 const EXTRACT_STEPS = [
@@ -89,6 +98,18 @@ export default function Home() {
   // moment the user scrolls up, so we never fight their manual scroll.
   const stickToBottom = useRef(true);
 
+<<<<<<< Updated upstream
+=======
+  // false until the first hash write, so that write can replaceState (no
+  // phantom back-step) while every write after it pushes a history entry
+  const hashInit = useRef(false);
+  // latest routing-relevant state, read by the (mount-once) hashchange
+  // listener without re-subscribing on every streamed token
+  const routeStateRef = useRef({ file, fields, agreement });
+  routeStateRef.current = { file, fields, agreement };
+
+  // keep the streaming panel pinned to the bottom as text arrives
+>>>>>>> Stashed changes
   useEffect(() => {
     const el = agreementPreRef.current;
     if (phase === "generating" && el && stickToBottom.current) el.scrollTop = el.scrollHeight;
@@ -125,6 +146,34 @@ export default function Home() {
     const id = setTimeout(() => setHintSample(true), 3000);
     return () => clearTimeout(id);
   }, [phase, file]);
+
+  // ── Hash routing (#upload / #review / #draft) ─────────────────────
+  // phase → hash: reflect the current stable screen in the URL. Transitional
+  // phases have no entry in SCREEN_OF_PHASE, so they leave the hash alone.
+  useEffect(() => {
+    const screen = SCREEN_OF_PHASE[phase];
+    if (!screen) return;
+    if (window.location.hash.slice(1) !== screen) {
+      if (hashInit.current) window.location.hash = screen;
+      else window.history.replaceState(null, "", `#${screen}`);
+    }
+    hashInit.current = true;
+  }, [phase]);
+
+  // hash → phase: follow browser back/forward, but only into a screen the
+  // current in-memory state can render; otherwise fall back to upload (which
+  // the effect above then writes back into the hash).
+  useEffect(() => {
+    function sync() {
+      const { file, fields, agreement } = routeStateRef.current;
+      const screen = window.location.hash.slice(1);
+      if (screen === "draft" && agreement.length > 0) setPhase("done");
+      else if (screen === "review" && file && fields.length > 0) setPhase("form");
+      else setPhase("idle");
+    }
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
 
   async function handleFile(f: File) {
     if (f.type !== "application/pdf") {
