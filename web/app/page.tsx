@@ -33,7 +33,6 @@ export default function Home() {
   const [contractType, setContractType] = useState("");
   const [fields, setFields] = useState<ContractField[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
-  const [missing, setMissing] = useState<Set<string>>(new Set());
   const [agreement, setAgreement] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -89,15 +88,12 @@ export default function Home() {
       if (!res.ok) throw new Error(`Extraction failed (${res.status})`);
       const data = (await res.json()) as { contract_type: string; fields: ContractField[] };
       const next: Record<string, string> = {};
-      const miss = new Set<string>();
       for (const { key, value } of data.fields) {
         next[key] = value ?? "";
-        if (!value) miss.add(key);
       }
       setContractType(data.contract_type);
       setFields(data.fields);
       setValues(next);
-      setMissing(miss);
       setPhase("form");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -134,7 +130,7 @@ export default function Home() {
     }
   }
 
-  const missingCount = fields.filter((f) => missing.has(f.key) && !values[f.key]?.trim()).length;
+  const requiredEmpty = fields.filter((f) => !f.optional && !values[f.key]?.trim()).length;
   const groups = [...new Set(fields.map((f) => f.group))];
 
   return (
@@ -222,9 +218,9 @@ export default function Home() {
                   Drafting: <span className="font-medium text-gray-700">{contractType}</span>.{" "}
                 </>
               )}
-              {missingCount > 0
-                ? `${missingCount} field${missingCount > 1 ? "s" : ""} couldn't be found in the correspondence — highlighted below. Fill in what you know; anything left blank becomes a blank line in the agreement.`
-                : "Everything was found in the correspondence — edit anything that looks off."}
+              {requiredEmpty > 0
+                ? `${requiredEmpty} required field${requiredEmpty > 1 ? "s" : ""} still to fill in — highlighted below. Optional fields you leave blank are simply left out of the agreement, not rendered as blanks.`
+                : "All required details are in — edit anything that looks off; optional fields are yours to fill or skip."}
             </p>
           </div>
 
@@ -235,7 +231,8 @@ export default function Home() {
               </legend>
               <div className="grid gap-4 sm:grid-cols-2">
                 {fields.filter((f) => f.group === group).map((f) => {
-                  const highlight = missing.has(f.key) && !values[f.key]?.trim();
+                  const empty = !values[f.key]?.trim();
+                  const highlight = empty && !f.optional;
                   const cls = `w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500 ${
                     highlight ? "border-amber-400 bg-amber-400/10" : "border-gray-300"
                   }`;
@@ -243,7 +240,11 @@ export default function Home() {
                     <div key={f.key} className={f.multiline ? "sm:col-span-2" : ""}>
                       <label className="mb-1 block text-sm font-medium">
                         {f.label}
-                        {highlight && <span className="ml-2 text-xs text-amber-600">missing</span>}
+                        {highlight ? (
+                          <span className="ml-2 text-xs text-amber-600">required</span>
+                        ) : (
+                          empty && <span className="ml-2 text-xs text-gray-400">optional</span>
+                        )}
                       </label>
                       {f.multiline ? (
                         <textarea
@@ -266,13 +267,21 @@ export default function Home() {
             </fieldset>
           ))}
 
-          <button
-            onClick={generate}
-            disabled={phase === "generating"}
-            className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {phase === "generating" ? "Generating agreement…" : "Generate agreement"}
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={generate}
+              disabled={phase === "generating" || requiredEmpty > 0}
+              className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {phase === "generating" ? "Generating agreement…" : "Generate agreement"}
+            </button>
+            {requiredEmpty > 0 && phase !== "generating" && (
+              <p className="text-sm text-amber-600">
+                Fill in the {requiredEmpty} required field{requiredEmpty > 1 ? "s" : ""} first — the
+                agreement can&apos;t contain blanks.
+              </p>
+            )}
+          </div>
         </section>
       )}
 

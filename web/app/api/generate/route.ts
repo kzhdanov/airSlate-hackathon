@@ -1,13 +1,17 @@
 import { client, MODEL } from "@/lib/llm";
 import { pdfToText } from "@/lib/pdf";
+import { today } from "@/lib/date";
 import type { ContractField } from "@/lib/fields";
 
-const PROMPT = `You are drafting a formal written contract. Below is the correspondence between two parties discussing the deal (extracted from a PDF), followed by the contract type and the contract details confirmed by the user (these take precedence over the correspondence).
+const prompt = (todayStr: string) => `You are drafting a formal written contract. Below is the correspondence between two parties discussing the deal (extracted from a PDF), followed by the contract type and the contract details confirmed by the user (these take precedence over the correspondence).
 
 Draft a complete, ready-to-sign contract of the stated type. Include the standard provisions such a contract needs (parties, subject matter, obligations, price and payment, term and dates, warranties, liability, termination, governing law, signature blocks), plus any provisions required by law for this contract type in the jurisdiction evident from the correspondence.
 
 Rules:
-- Use the confirmed details verbatim. For anything still unknown, insert a blank like [_______] — never invent facts.
+- Use the confirmed details verbatim. All required details are provided; a few optional ones may be marked [not provided].
+- Do NOT insert any placeholder or blank line (like [____] or ______) anywhere in the body of the contract. When a detail is marked [not provided], omit that point or clause entirely rather than writing a blank — never force a provision that has no value. The ONLY blanks allowed are in the signature block: a line for each party's signature and the date of signing.
+- For an obvious universal default, use it directly rather than a blank: today's date is ${todayStr}.
+- Never invent party-specific facts (names, addresses, amounts).
 - Where the correspondence contains specific agreed points not covered by the fields (e.g. side promises, access, cleanup), incorporate them into the relevant sections.
 - Output plain text only (no markdown symbols), formatted as a contract: title, numbered sections with headings in capitals, signature blocks at the end.`;
 
@@ -32,7 +36,7 @@ export async function POST(req: Request) {
     messages: [
       {
         role: "user",
-        content: `${PROMPT}\n\n<correspondence>\n${correspondence}\n</correspondence>\n\nContract type: ${contractType}\n\nConfirmed contract details:\n${details}`,
+        content: `${prompt(today())}\n\n<correspondence>\n${correspondence}\n</correspondence>\n\nContract type: ${contractType}\n\nConfirmed contract details:\n${details}`,
       },
     ],
   });

@@ -6,4 +6,5 @@ export type ContractField = {
   group: string;
   value: string; // "" when not found in the correspondence
   multiline: boolean;
+  optional: boolean; // true when the field may legitimately not apply to this deal
 };
