@@ -85,11 +85,13 @@ export default function Home() {
   const [hintSample, setHintSample] = useState(false);
 
   const agreementPreRef = useRef<HTMLPreElement>(null);
+  // whether to keep the streaming panel pinned to the bottom. Flips off the
+  // moment the user scrolls up, so we never fight their manual scroll.
+  const stickToBottom = useRef(true);
 
-  // keep the streaming panel pinned to the bottom as text arrives
   useEffect(() => {
     const el = agreementPreRef.current;
-    if (phase === "generating" && el) el.scrollTop = el.scrollHeight;
+    if (phase === "generating" && el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [agreement, phase]);
 
   // cycle the status checklist while a phase waits on the model; generation
@@ -168,6 +170,7 @@ export default function Home() {
     if (!file) return;
     setError(null);
     setAgreement("");
+    stickToBottom.current = true;
     setPhase("generating");
     try {
       const form = new FormData();
@@ -599,6 +602,11 @@ export default function Home() {
                 ) : phase === "generating" ? (
                   <pre
                     ref={agreementPreRef}
+                    onScroll={(e) => {
+                      const el = e.currentTarget;
+                      // still "stuck" only if the user is within 40px of the bottom
+                      stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                    }}
                     className="mt-4 max-h-[56vh] overflow-y-auto whitespace-pre-wrap break-words rounded-[14px] border border-line bg-surface px-7 py-6 font-contract text-[14px] leading-[1.75] text-ink shadow-[0_12px_30px_rgba(0,0,0,0.05)]"
                   >
                     {agreement}

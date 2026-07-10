@@ -7,11 +7,14 @@ import {
   $createTextNode,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   CAN_REDO_COMMAND,
   CAN_UNDO_COMMAND,
   COMMAND_PRIORITY_LOW,
   type EditorState,
+  type ElementFormatType,
+  FORMAT_ELEMENT_COMMAND,
   FORMAT_TEXT_COMMAND,
   INDENT_CONTENT_COMMAND,
   KEY_DOWN_COMMAND,
@@ -47,6 +50,10 @@ import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Heading1,
   Heading2,
@@ -144,6 +151,7 @@ function Toolbar() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const [blockType, setBlockType] = useState<BlockType>("paragraph");
+  const [align, setAlign] = useState<ElementFormatType>("left");
   const [formats, setFormats] = useState({
     bold: false,
     italic: false,
@@ -165,10 +173,16 @@ function Toolbar() {
     if ($isListNode(el)) setBlockType(el.getListType() === "number" ? "ol" : "ul");
     else if ($isHeadingNode(el)) setBlockType(el.getTag() as BlockType);
     else setBlockType("paragraph");
+    setAlign(($isElementNode(el) ? el.getFormatType() : "") || "left");
   }, []);
 
   const format = useCallback(
     (f: TextFormatType) => editor.dispatchCommand(FORMAT_TEXT_COMMAND, f),
+    [editor],
+  );
+
+  const formatAlign = useCallback(
+    (a: ElementFormatType) => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, a),
     [editor],
   );
 
@@ -338,6 +352,21 @@ function Toolbar() {
         onClick={() => editor.dispatchCommand(INDENT_CONTENT_COMMAND, undefined)}
       >
         <IndentIncrease size={16} />
+      </TBtn>
+
+      <Divider />
+
+      <TBtn label="Align left" active={align === "left" || align === "start" || align === ""} onClick={() => formatAlign("left")}>
+        <AlignLeft size={16} />
+      </TBtn>
+      <TBtn label="Align center" active={align === "center"} onClick={() => formatAlign("center")}>
+        <AlignCenter size={16} />
+      </TBtn>
+      <TBtn label="Align right" active={align === "right" || align === "end"} onClick={() => formatAlign("right")}>
+        <AlignRight size={16} />
+      </TBtn>
+      <TBtn label="Justify" active={align === "justify"} onClick={() => formatAlign("justify")}>
+        <AlignJustify size={16} />
       </TBtn>
 
       <div className="ml-auto flex items-center gap-1.5 pl-2">

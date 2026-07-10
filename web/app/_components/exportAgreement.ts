@@ -13,7 +13,16 @@ import { $isHeadingNode } from "@lexical/rich-text";
 // single source the three exporters share, so PDF / Word / Print stay in sync
 // and all carry the bold/italic the user applied in the toolbar.
 type Run = { text: string; bold: boolean; italic: boolean } | { br: true };
-type Block = Run[];
+type Align = "left" | "center" | "right" | "justify";
+type Block = { runs: Run[]; align: Align };
+
+// Lexical stores 'start'/'end'/'' too — fold them into the four we render.
+function normalizeAlign(f: string): Align {
+  if (f === "center") return "center";
+  if (f === "right" || f === "end") return "right";
+  if (f === "justify") return "justify";
+  return "left";
+}
 
 // Collect the inline runs inside one element (text + soft breaks), recursing
 // through any wrapping inline elements (e.g. links).
@@ -47,7 +56,10 @@ function readBlocks(editor: LexicalEditor): Block[] {
         for (const item of node.getChildren()) {
           if (!$isElementNode(item)) continue;
           const prefix = ordered ? `${n++}. ` : "• ";
-          blocks.push([...pad(item.getIndent()), { text: prefix, bold: false, italic: false }, ...inlineRuns(item)]);
+          blocks.push({
+            runs: [...pad(item.getIndent()), { text: prefix, bold: false, italic: false }, ...inlineRuns(item)],
+            align: normalizeAlign(item.getFormatType()),
+          });
         }
       } else if ($isElementNode(node)) {
         const runs = [...pad(node.getIndent()), ...inlineRuns(node)];
@@ -56,7 +68,7 @@ function readBlocks(editor: LexicalEditor): Block[] {
           runs.forEach((r) => {
             if (!("br" in r)) r.bold = true;
           });
-        blocks.push(runs);
+        blocks.push({ runs, align: normalizeAlign(node.getFormatType()) });
       }
     }
     return blocks;
@@ -68,7 +80,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 function toHtml(blocks: Block[]): string {
   return blocks
     .map((block) => {
-      const inner = block
+      const inner = block.runs
         .map((run) => {
           if ("br" in run) return "<br/>";
           let t = esc(run.text);
@@ -77,7 +89,7 @@ function toHtml(blocks: Block[]): string {
           return t;
         })
         .join("");
-      return `<p>${inner || "<br/>"}</p>`;
+      return `<p style="text-align:${block.align}">${inner || "<br/>"}</p>`;
     })
     .join("\n");
 }
@@ -96,7 +108,14 @@ function download(blob: Blob, filename: string) {
 // Times New Roman 12pt with 1.5 line spacing to match the on-screen agreement.
 export async function exportWord(editor: LexicalEditor) {
   const blocks = readBlocks(editor);
-  const { Document, Packer, Paragraph, TextRun } = await import("docx");
+  const { AlignmentType, Document, Packer, Paragraph, TextRun } = await import("docx");
+
+  const alignFor = {
+    left: AlignmentType.LEFT,
+    center: AlignmentType.CENTER,
+    right: AlignmentType.RIGHT,
+    justify: AlignmentType.JUSTIFIED,
+  } as const;
 
   const doc = new Document({
     styles: {
@@ -112,7 +131,8 @@ export async function exportWord(editor: LexicalEditor) {
         children: blocks.map(
           (block) =>
             new Paragraph({
-              children: block.map((run) =>
+              alignment: alignFor[block.align],
+              children: block.runs.map((run) =>
                 "br" in run
                   ? new TextRun({ break: 1 })
                   : new TextRun({ text: run.text, bold: run.bold, italics: run.italic }),
@@ -171,7 +191,7 @@ export async function exportPdf(editor: LexicalEditor) {
   };
 
   for (const block of blocks) {
-    for (const run of block) {
+    for (const run of block.runs) {
       if ("br" in run) {
         newline();
         continue;
