@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { ContractField } from "@/lib/fields";
+import AgreementEditor from "./_components/AgreementEditor";
 
 type Phase = "idle" | "extracting" | "form" | "generating" | "done";
 
@@ -294,14 +295,21 @@ export default function Home() {
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
               <span>{status}</span>
             </div>
-          ) : (
+          ) : phase === "generating" ? (
             <pre
               ref={agreementPreRef}
               className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-white p-8 font-serif text-[15px] leading-relaxed text-gray-900 shadow-sm"
             >
               {agreement}
-              {phase === "generating" && <span className="animate-pulse">▍</span>}
+              <span className="animate-pulse">▍</span>
             </pre>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500">
+                Edit the draft directly — click into the text to make changes before you sign.
+              </p>
+              <AgreementEditor initialText={agreement} onChange={setAgreement} />
+            </>
           )}
         </section>
       )}
