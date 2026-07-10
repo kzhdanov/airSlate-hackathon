@@ -53,7 +53,6 @@ export async function POST(req: Request) {
   const response = await client.messages.create({
     model: MODEL,
     max_tokens: 16000,
-    thinking: { type: "adaptive" },
     output_config: { format: { type: "json_schema", schema } },
     messages: [
       {

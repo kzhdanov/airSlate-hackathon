@@ -29,7 +29,6 @@ export async function POST(req: Request) {
   const stream = client.messages.stream({
     model: MODEL,
     max_tokens: 64000,
-    thinking: { type: "adaptive" },
     messages: [
       {
         role: "user",

@@ -8,4 +8,6 @@ export const client = new Anthropic(
   liteLlmHost ? { baseURL: liteLlmHost, apiKey: process.env.LITE_LLM_KEY } : {},
 );
 
-export const MODEL = liteLlmHost ? "openrouter/deepseek/deepseek-v3.2" : "openrouter/deepseek/deepseek-v3.2";
+export const MODEL = liteLlmHost
+  ? "anthropic/claude-haiku-4-5-20251001"
+  : "claude-haiku-4-5-20251001";

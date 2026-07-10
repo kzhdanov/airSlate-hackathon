@@ -37,7 +37,7 @@ web/
 ```
 
 - **Stack:** Next.js 16 (App Router, Turbopack), React 19, Tailwind 4, TypeScript.
-- **Model:** DeepSeek V3.2 (`openrouter/deepseek/deepseek-v3.2` via LiteLLM) with adaptive thinking.
+- **Model:** Claude Haiku 4.5 (`anthropic/claude-haiku-4-5-20251001` via LiteLLM).
 - **Extraction** uses structured outputs (`output_config.format` json_schema) — the response is
   guaranteed-valid JSON: the contract type plus an array of fields (key, label, group, value);
   a field absent from the correspondence comes back with an empty value.
