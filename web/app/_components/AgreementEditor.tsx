@@ -18,6 +18,7 @@ import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
+import { exportPdf, exportWord, printAgreement } from "./exportAgreement";
 
 // The agreement arrives as plain text: paragraphs separated by a blank line,
 // with soft line breaks inside. Rebuild that structure as Lexical nodes so that
@@ -63,6 +64,17 @@ function Toolbar() {
       >
         I
       </button>
+      <div className="ml-auto flex items-center gap-1">
+        <button type="button" className={btn} onClick={() => exportPdf(editor)}>
+          PDF
+        </button>
+        <button type="button" className={btn} onClick={() => exportWord(editor)}>
+          Word
+        </button>
+        <button type="button" className={btn} onClick={() => printAgreement(editor)} title="Print / Save as PDF (⌘P)">
+          Print
+        </button>
+      </div>
     </div>
   );
 }

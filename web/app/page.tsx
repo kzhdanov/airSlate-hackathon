@@ -290,14 +290,6 @@ export default function Home() {
         <section ref={agreementRef} className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Your agreement</h2>
-            {phase === "done" && (
-              <button
-                onClick={() => navigator.clipboard.writeText(agreement)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
-              >
-                Copy
-              </button>
-            )}
           </div>
           {phase === "generating" && !agreement ? (
             <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-8 text-gray-500 shadow-sm">
