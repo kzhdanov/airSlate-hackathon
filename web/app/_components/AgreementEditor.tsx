@@ -40,16 +40,19 @@ function seed(text: string) {
 
 function Toolbar() {
   const [editor] = useLexicalComposerContext();
-  const btn = "rounded px-2 py-1 text-sm hover:bg-gray-100";
+  const btn =
+    "rounded-md px-2.5 py-1 text-[13px] font-semibold text-muted transition-colors hover:bg-hero hover:text-ink";
+  const exportBtn =
+    "rounded-md border border-line px-2.5 py-1 text-[12px] font-semibold text-ink transition-colors hover:border-accent hover:text-accent";
   return (
-    <div className="flex items-center gap-1 border-b border-gray-200 px-3 py-2">
+    <div className="flex items-center gap-1 border-b border-line bg-surface px-3 py-2">
       <button type="button" className={btn} onClick={() => editor.dispatchCommand(UNDO_COMMAND, undefined)}>
         Undo
       </button>
       <button type="button" className={btn} onClick={() => editor.dispatchCommand(REDO_COMMAND, undefined)}>
         Redo
       </button>
-      <span className="mx-1 h-4 w-px bg-gray-200" />
+      <span className="mx-1 h-4 w-px bg-line" />
       <button
         type="button"
         className={`${btn} font-bold`}
@@ -64,14 +67,14 @@ function Toolbar() {
       >
         I
       </button>
-      <div className="ml-auto flex items-center gap-1">
-        <button type="button" className={btn} onClick={() => exportPdf(editor)}>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button type="button" className={exportBtn} onClick={() => exportPdf(editor)}>
           PDF
         </button>
-        <button type="button" className={btn} onClick={() => exportWord(editor)}>
+        <button type="button" className={exportBtn} onClick={() => exportWord(editor)}>
           Word
         </button>
-        <button type="button" className={btn} onClick={() => printAgreement(editor)} title="Print / Save as PDF (⌘P)">
+        <button type="button" className={exportBtn} onClick={() => printAgreement(editor)} title="Print / Save as PDF (⌘P)">
           Print
         </button>
       </div>
@@ -105,12 +108,12 @@ export default function AgreementEditor({
         },
       }}
     >
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_12px_30px_rgba(0,0,0,0.05)]">
         <Toolbar />
-        <div className="max-h-[70vh] overflow-y-auto">
+        <div className="max-h-[56vh] overflow-y-auto">
           <RichTextPlugin
             contentEditable={
-              <ContentEditable className="min-h-[40vh] p-8 font-serif text-[15px] leading-relaxed text-gray-900 outline-none" />
+              <ContentEditable className="min-h-[40vh] px-7 py-6 font-contract text-[14px] leading-[1.75] text-ink outline-none" />
             }
             ErrorBoundary={LexicalErrorBoundary}
           />

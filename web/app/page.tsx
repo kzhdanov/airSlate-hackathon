@@ -1,20 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import Image from "next/image";
+import {
+  ArrowRight,
+  Check,
+  CreditCard,
+  FileText,
+  Home as HomeIcon,
+  Palette,
+  ShieldCheck,
+  TriangleAlert,
+  Upload,
+  Users,
+  Wrench,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import type { ContractField } from "@/lib/fields";
+import type { GuideKey } from "@/lib/guides";
 import AgreementEditor from "./_components/AgreementEditor";
+import GuidesModal from "./_components/GuidesModal";
 
 type Phase = "idle" | "extracting" | "form" | "generating" | "done";
 
-// Rotating status lines shown while a phase is waiting on the model. The last
-// line is safe to linger on since it just reads as "still working".
+// Rotating status lines shown while a phase waits on the model. Rendered as a
+// checklist that lights up in sequence — eye-candy over the real async call.
 const EXTRACT_STEPS = [
-  "Parsing the PDF…",
-  "Reading the correspondence…",
-  "Figuring out the contract type…",
-  "Working out which details are needed…",
-  "Almost done…",
+  "Parsing the PDF",
+  "Reading the correspondence",
+  "Identifying the contract type",
+  "Extracting the agreed terms",
+  "Flagging what still needs confirming",
 ];
 
 const GENERATE_STEPS = [
@@ -26,9 +43,37 @@ const GENERATE_STEPS = [
   "Almost there…",
 ];
 
+// Fixture threads shipped in /public/samples — a click runs them through the
+// real /api/extract, so the demo path is the production path.
+const SAMPLES: { file: string; label: string; sub: string; type: string; icon: LucideIcon }[] = [
+  {
+    file: "Gmail_Roofing_Thread.pdf",
+    label: "Roof repair thread",
+    sub: "Homeowner ↔ contractor emails",
+    type: "Home Improvement Contract",
+    icon: HomeIcon,
+  },
+  {
+    file: "Gmail_WebDesign_Thread.pdf",
+    label: "Freelance design chat",
+    sub: "Client ↔ studio emails",
+    type: "Freelance Services Agreement",
+    icon: Palette,
+  },
+];
+
+// Group name → legend icon. Unknown groups fall back to a document icon so
+// extraction can return any grouping.
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  Parties: Users,
+  Project: Wrench,
+  Payment: CreditCard,
+  Terms: ShieldCheck,
+};
+
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [status, setStatus] = useState("");
+  const [statusStep, setStatusStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [contractType, setContractType] = useState("");
   const [fields, setFields] = useState<ContractField[]>([]);
@@ -36,24 +81,18 @@ export default function Home() {
   const [agreement, setAgreement] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [guideTab, setGuideTab] = useState<GuideKey | null>(null);
 
-  const formRef = useRef<HTMLDivElement>(null);
-  const agreementRef = useRef<HTMLDivElement>(null);
   const agreementPreRef = useRef<HTMLPreElement>(null);
 
-  useEffect(() => {
-    if (phase === "form") formRef.current?.scrollIntoView({ behavior: "smooth" });
-    if (phase === "generating") agreementRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [phase]);
-
-  // keep the agreement panel scrolled to the bottom while text streams in
+  // keep the streaming panel pinned to the bottom as text arrives
   useEffect(() => {
     const el = agreementPreRef.current;
     if (phase === "generating" && el) el.scrollTop = el.scrollHeight;
   }, [agreement, phase]);
 
-  // cycle through status lines while a phase waits on the model; generation
-  // messages stop as soon as the first streamed token arrives
+  // cycle the status checklist while a phase waits on the model; generation
+  // lines stop as soon as the first streamed token arrives
   const streaming = agreement.length > 0;
   useEffect(() => {
     const steps =
@@ -64,11 +103,11 @@ export default function Home() {
           : null;
     if (!steps) return;
     let i = 0;
-    setStatus(steps[0]);
+    setStatusStep(0);
     const id = setInterval(() => {
       i = Math.min(i + 1, steps.length - 1);
-      setStatus(steps[i]);
-    }, 2000);
+      setStatusStep(i);
+    }, 1400);
     return () => clearInterval(id);
   }, [phase, streaming]);
 
@@ -88,13 +127,24 @@ export default function Home() {
       if (!res.ok) throw new Error(`Extraction failed (${res.status})`);
       const data = (await res.json()) as { contract_type: string; fields: ContractField[] };
       const next: Record<string, string> = {};
-      for (const { key, value } of data.fields) {
-        next[key] = value ?? "";
-      }
+      for (const { key, value } of data.fields) next[key] = value ?? "";
       setContractType(data.contract_type);
       setFields(data.fields);
       setValues(next);
       setPhase("form");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setPhase("idle");
+    }
+  }
+
+  async function loadSample(fileName: string) {
+    try {
+      setError(null);
+      const res = await fetch(`/samples/${fileName}`);
+      if (!res.ok) throw new Error("Couldn't load the sample");
+      const blob = await res.blob();
+      await handleFile(new File([blob], fileName, { type: "application/pdf" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setPhase("idle");
@@ -118,7 +168,7 @@ export default function Home() {
       if (!res.ok || !res.body) throw new Error(`Generation failed (${res.status})`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      while (true) {
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         setAgreement((prev) => prev + decoder.decode(value, { stream: true }));
@@ -130,190 +180,433 @@ export default function Home() {
     }
   }
 
+  function reset() {
+    setPhase("idle");
+    setAgreement("");
+    setError(null);
+    setFile(null);
+  }
+
   const requiredEmpty = fields.filter((f) => !f.optional && !values[f.key]?.trim()).length;
   const groups = [...new Set(fields.map((f) => f.group))];
+  const stepIndex = phase === "idle" ? 0 : phase === "extracting" || phase === "form" ? 1 : 2;
+  const isDraft = phase === "generating" || phase === "done";
+
+  // Stepper navigation: jump back to an already-reached step (never skip ahead,
+  // never interrupt an in-flight extract/generate). State persists, so hopping
+  // Upload ⇄ Review ⇄ Draft doesn't lose the user's edits.
+  const busy = phase === "extracting" || phase === "generating";
+  const stepReachable = (i: number) =>
+    !busy &&
+    i <= stepIndex &&
+    (i === 0 || (i === 1 && fields.length > 0) || (i === 2 && agreement.length > 0));
+  function goToStep(i: number) {
+    if (!stepReachable(i)) return;
+    setPhase(i === 0 ? "idle" : i === 1 ? "form" : "done");
+  }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12 space-y-10">
-      <header>
-        <h1 className="text-3xl font-bold">Agreement Builder</h1>
-        <p className="mt-2 text-gray-500">
-          Been going back and forth with a contractor and finally ready to sign? With our
-          service it&apos;s a breeze — just upload your correspondence as a PDF and we&apos;ll
-          turn it into a ready-to-sign contract.
-        </p>
-        <p className="mt-3 text-sm text-gray-500">
-          Need to turn your chat into a PDF first? See how for{" "}
-          <Link href="/guides/gmail" className="text-blue-600 hover:underline">
-            Gmail
-          </Link>
-          ,{" "}
-          <Link href="/guides/whatsapp" className="text-blue-600 hover:underline">
-            WhatsApp
-          </Link>
-          , or{" "}
-          <Link href="/guides/telegram" className="text-blue-600 hover:underline">
-            Telegram
-          </Link>
-          .
-        </p>
+    <div className="min-h-screen overflow-x-clip">
+      {/* ── App header ─────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-20 border-b border-line bg-surface">
+        <div className="mx-auto flex max-w-[940px] items-center gap-2.5 px-5 py-3 sm:px-6">
+          <Image src="/handshake.png" alt="" width={32} height={32} className="flex-none object-contain" />
+          <div className="flex flex-col gap-1">
+            <span className="font-display text-[16px] font-bold leading-none text-ink">
+              Agreement Builder
+            </span>
+            <span className="text-[10.5px] uppercase leading-none tracking-[0.06em] text-muted">
+              Two sides · one page · signed
+            </span>
+          </div>
+        </div>
       </header>
 
-      {/* Step 1 — upload */}
-      <section>
-        <label
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragOver(false);
-            const f = e.dataTransfer.files[0];
-            if (f) handleFile(f);
-          }}
-          className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-colors ${
-            dragOver ? "border-blue-500 bg-blue-500/5" : "border-gray-300 hover:border-gray-400"
-          }`}
-        >
-          <input
-            type="file"
-            accept="application/pdf"
-            className="hidden"
-            disabled={phase === "extracting" || phase === "generating"}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-              e.target.value = "";
-            }}
-          />
-          {phase === "extracting" ? (
-            <>
-              <span className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-              <span className="text-gray-500">{status}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-lg font-medium">
-                {file ? file.name : "Drop a PDF here or click to browse"}
-              </span>
-              <span className="text-sm text-gray-500">
-                Emails or messages where the two sides discuss the terms
-              </span>
-            </>
-          )}
-        </label>
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
-      </section>
-
-      {/* Step 2 — review & fill in */}
-      {(phase === "form" || phase === "generating" || phase === "done") && (
-        <section ref={formRef} className="space-y-6">
-          <div>
-            <h2 className="text-xl font-semibold">Review the details</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              {contractType && (
-                <>
-                  Drafting: <span className="font-medium text-gray-700">{contractType}</span>.{" "}
-                </>
-              )}
-              {requiredEmpty > 0
-                ? `${requiredEmpty} required field${requiredEmpty > 1 ? "s" : ""} still to fill in — highlighted below. Optional fields you leave blank are simply left out of the agreement, not rendered as blanks.`
-                : "All required details are in — edit anything that looks off; optional fields are yours to fill or skip."}
-            </p>
-          </div>
-
-          {groups.map((group) => (
-            <fieldset key={group} className="rounded-xl border border-gray-200 p-5">
-              <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                {group}
-              </legend>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {fields.filter((f) => f.group === group).map((f) => {
-                  const empty = !values[f.key]?.trim();
-                  const highlight = empty && !f.optional;
-                  const cls = `w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500 ${
-                    highlight ? "border-amber-400 bg-amber-400/10" : "border-gray-300"
-                  }`;
-                  return (
-                    <div key={f.key} className={f.multiline ? "sm:col-span-2" : ""}>
-                      <label className="mb-1 block text-sm font-medium">
-                        {f.label}
-                        {highlight ? (
-                          <span className="ml-2 text-xs text-amber-600">required</span>
-                        ) : (
-                          empty && <span className="ml-2 text-xs text-gray-400">optional</span>
-                        )}
-                      </label>
-                      {f.multiline ? (
-                        <textarea
-                          rows={3}
-                          className={cls}
-                          value={values[f.key] ?? ""}
-                          onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                        />
-                      ) : (
-                        <input
-                          className={cls}
-                          value={values[f.key] ?? ""}
-                          onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
+      <div className="mx-auto max-w-[940px] px-4 pb-16 pt-6 sm:px-6">
+        {/* ── Stepper (centered, click to jump back) ──────────────── */}
+        <div className="mb-6 flex items-center justify-center gap-1.5">
+          {["Upload", "Review", "Draft"].map((name, i) => {
+            const done = i < stepIndex;
+            const active = i === stepIndex;
+            const on = done || active;
+            const reachable = stepReachable(i);
+            return (
+              <div key={name} className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => goToStep(i)}
+                  disabled={!reachable || active}
+                  className={`flex items-center gap-2 rounded-full px-1 py-1 transition-opacity ${
+                    reachable && !active ? "hover:opacity-70" : ""
+                  } ${!reachable && !active ? "cursor-default" : ""}`}
+                >
+                  <span
+                    className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full text-[11px] font-bold ${
+                      done
+                        ? "bg-success text-white"
+                        : active
+                          ? "bg-accent text-white"
+                          : "border border-line text-muted"
+                    }`}
+                  >
+                    {done ? <Check size={13} strokeWidth={3} className="text-white" /> : i + 1}
+                  </span>
+                  <span
+                    className={`text-[12px] font-semibold sm:text-[12.5px] ${on ? "text-ink" : "text-muted"}`}
+                  >
+                    {name}
+                  </span>
+                </button>
+                {i < 2 && (
+                  <span
+                    className={`h-0.5 w-4 flex-none rounded-full sm:w-[26px] ${i < stepIndex ? "bg-success" : "bg-line"}`}
+                  />
+                )}
               </div>
-            </fieldset>
-          ))}
+            );
+          })}
+        </div>
 
-          <div className="space-y-2">
-            <button
-              onClick={generate}
-              disabled={phase === "generating" || requiredEmpty > 0}
-              className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {phase === "generating" ? "Generating agreement…" : "Generate agreement"}
-            </button>
-            {requiredEmpty > 0 && phase !== "generating" && (
-              <p className="text-sm text-amber-600">
-                Fill in the {requiredEmpty} required field{requiredEmpty > 1 ? "s" : ""} first — the
-                agreement can&apos;t contain blanks.
-              </p>
+        <div className="overflow-hidden rounded-[22px] border border-line bg-surface shadow-[0_24px_60px_rgba(0,0,0,0.07)]">
+          <div className="px-5 py-8 sm:px-8 sm:py-10">
+            {/* ── SCREEN: upload ─────────────────────────────────── */}
+            {phase === "idle" && (
+              <div className="ab-rise">
+                <h1 className="mt-1.5 text-balance font-display text-[27px] font-bold leading-[1.12] text-ink sm:text-[34px] sm:leading-[1.1]">
+                  Turn the back-and-forth into a signed deal.
+                </h1>
+                <p className="mt-3.5 max-w-[46ch] text-[15px] leading-[1.6] text-muted">
+                  Upload the emails or messages where you and the other side worked out the terms.
+                  We read the thread, figure out what kind of contract it is, and draft it — filling
+                  in what was agreed and flagging what&apos;s still open.
+                </p>
+
+                <label
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOver(true);
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    const f = e.dataTransfer.files[0];
+                    if (f) handleFile(f);
+                  }}
+                  className={`mt-[26px] flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[18px] border-2 border-dashed px-6 py-11 text-center transition-colors ${
+                    dragOver
+                      ? "border-accent bg-[color-mix(in_srgb,var(--color-accent)_6%,var(--color-hero))]"
+                      : "border-line bg-hero hover:border-accent"
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <span className="ab-float flex h-[52px] w-[52px] items-center justify-center rounded-[14px] border border-line bg-surface">
+                    <Upload size={24} strokeWidth={1.8} className="text-accent" />
+                  </span>
+                  <span className="text-[16px] font-semibold text-ink">
+                    Drop your PDF here, or click to browse
+                  </span>
+                  <span className="text-[13px] text-muted">
+                    The correspondence where the two sides discuss the terms
+                  </span>
+                </label>
+
+                <div className="mt-[22px] flex flex-wrap items-center gap-2.5">
+                  <span className="text-[12.5px] text-muted">No PDF yet? Save your chat first:</span>
+                  {(["gmail", "whatsapp", "telegram"] as GuideKey[]).map((k) => (
+                    <button
+                      key={k}
+                      onClick={() => setGuideTab(k)}
+                      className="rounded-full border border-line bg-surface px-3 py-[5px] text-[12px] font-semibold text-ink transition-colors hover:border-accent hover:text-accent"
+                    >
+                      {k === "gmail" ? "Gmail" : k === "whatsapp" ? "WhatsApp" : "Telegram"}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-[26px] border-t border-line pt-[22px]">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Zap size={15} strokeWidth={2} className="text-accent" />
+                    <span className="text-[12.5px] font-semibold text-ink">
+                      In a hurry? Skip the upload and try a sample thread
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {SAMPLES.map((s) => {
+                      const Icon = s.icon;
+                      return (
+                        <button
+                          key={s.file}
+                          onClick={() => loadSample(s.file)}
+                          className="flex items-center gap-3 rounded-[14px] border border-line bg-surface p-3.5 text-left transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-[0_8px_20px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]"
+                        >
+                          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] bg-hero text-accent">
+                            <Icon size={19} strokeWidth={1.9} />
+                          </span>
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span className="text-[13.5px] font-semibold text-ink">{s.label}</span>
+                            <span className="text-[11.5px] text-muted">
+                              {s.sub} · {s.type}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {error && <p className="mt-4 text-[13px] text-red-600">{error}</p>}
+              </div>
+            )}
+
+            {/* ── SCREEN: extracting ─────────────────────────────── */}
+            {phase === "extracting" && (
+              <div className="ab-rise flex flex-col items-center py-6 text-center">
+                <div className="relative flex h-[74px] w-[74px] items-center justify-center">
+                  <span className="ab-spin absolute inset-0 rounded-full border-[3px] border-line border-t-accent" />
+                  <Image
+                    src="/handshake.png"
+                    alt=""
+                    width={40}
+                    height={40}
+                    className="ab-pulse object-contain"
+                  />
+                </div>
+                <h2 className="mb-1 mt-5 font-display text-[22px] font-bold text-ink">
+                  Reading the correspondence…
+                </h2>
+                {file && (
+                  <div className="mt-1.5 inline-flex items-center gap-2 rounded-full bg-hero px-3 py-1.5 text-[12.5px] text-muted">
+                    <FileText size={14} strokeWidth={1.8} />
+                    {file.name}
+                  </div>
+                )}
+                <div className="mt-[26px] flex w-full max-w-[420px] flex-col gap-2.5 text-left">
+                  {EXTRACT_STEPS.map((label, i) => {
+                    const done = i < statusStep;
+                    const active = i === statusStep;
+                    return (
+                      <div
+                        key={label}
+                        className="flex items-center gap-3 rounded-[12px] border border-line bg-surface px-3.5 py-3 transition-all"
+                        style={{ opacity: done || active ? 1 : 0.45 }}
+                      >
+                        <span
+                          className={`flex h-[22px] w-[22px] flex-none items-center justify-center rounded-full text-[12px] font-bold ${
+                            done
+                              ? "bg-success"
+                              : active
+                                ? "ab-ring border-2 border-accent bg-transparent"
+                                : "border-2 border-line bg-transparent"
+                          }`}
+                        >
+                          {done && <Check size={13} strokeWidth={3} className="text-white" />}
+                        </span>
+                        <span className="text-[13.5px] font-medium text-ink">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── SCREEN: review ─────────────────────────────────── */}
+            {phase === "form" && (
+              <div className="ab-rise">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-[26px] font-bold text-ink">Review the terms</h2>
+                    <p className="mt-2 max-w-[52ch] text-[13.5px] text-muted">
+                      Values found in your thread are filled in. Confirm anything that looks off —
+                      required fields must be set, optional ones you skip are simply left out.
+                    </p>
+                  </div>
+                  {contractType && (
+                    <span className="ab-pop inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-[color-mix(in_srgb,var(--color-accent)_12%,var(--color-surface))] px-3.5 py-[7px] text-[12.5px] font-bold text-accent2">
+                      <Check size={14} strokeWidth={2} />
+                      {contractType}
+                    </span>
+                  )}
+                </div>
+
+                {requiredEmpty > 0 ? (
+                  <div className="mt-[18px] flex items-center gap-2.5 rounded-[12px] border border-[color-mix(in_srgb,var(--color-danger)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_9%,var(--color-surface))] px-3.5 py-3">
+                    <TriangleAlert size={18} strokeWidth={2} className="flex-none text-danger" />
+                    <span className="text-[13px] text-ink">
+                      <strong>
+                        {requiredEmpty} required field{requiredEmpty > 1 ? "s" : ""}
+                      </strong>{" "}
+                      still need filling — highlighted below. Optional fields left blank are simply
+                      left out of the agreement.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-[18px] flex items-center gap-2.5 rounded-[12px] border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-surface))] px-3.5 py-3">
+                    <Check size={18} strokeWidth={2} className="flex-none text-accent" />
+                    <span className="text-[13px] text-ink">
+                      All required details are in — edit anything that looks off, then draft.
+                    </span>
+                  </div>
+                )}
+
+                <div className="mt-5 flex flex-col gap-4">
+                  {groups.map((group, gi) => {
+                    const Icon = GROUP_ICONS[group] ?? FileText;
+                    return (
+                      <fieldset
+                        key={group}
+                        className="ab-rise m-0 rounded-[14px] border border-line bg-surface px-[18px] pb-[18px] pt-4"
+                        style={{ animationDelay: `${gi * 0.08}s` }}
+                      >
+                        <legend className="flex items-center gap-1.5 px-2 text-[11px] font-bold uppercase tracking-[0.08em] text-accent">
+                          <Icon size={14} strokeWidth={2} />
+                          {group}
+                        </legend>
+                        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                          {fields
+                            .filter((f) => f.group === group)
+                            .map((f) => {
+                              const empty = !values[f.key]?.trim();
+                              const highlight = empty && !f.optional;
+                              return (
+                                <div key={f.key} className={f.multiline ? "sm:col-span-2" : ""}>
+                                  <label className="mb-1.5 flex items-center gap-2 text-[12px] font-semibold text-ink">
+                                    {f.label}
+                                    {highlight ? (
+                                      <span className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-danger">
+                                        required
+                                      </span>
+                                    ) : (
+                                      empty && (
+                                        <span className="text-[9.5px] font-bold uppercase tracking-[0.05em] text-muted">
+                                          optional
+                                        </span>
+                                      )
+                                    )}
+                                  </label>
+                                  {f.multiline ? (
+                                    <textarea
+                                      rows={2}
+                                      className={`ab-input resize-y ${highlight ? "ab-input-required" : ""}`}
+                                      value={values[f.key] ?? ""}
+                                      onChange={(e) =>
+                                        setValues((v) => ({ ...v, [f.key]: e.target.value }))
+                                      }
+                                    />
+                                  ) : (
+                                    <input
+                                      className={`ab-input ${highlight ? "ab-input-required" : ""}`}
+                                      value={values[f.key] ?? ""}
+                                      onChange={(e) =>
+                                        setValues((v) => ({ ...v, [f.key]: e.target.value }))
+                                      }
+                                    />
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </fieldset>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-[22px] flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    onClick={reset}
+                    className="rounded-[11px] border border-line bg-transparent px-[18px] py-[11px] text-[14px] font-semibold text-muted transition-colors hover:border-muted hover:text-ink"
+                  >
+                    ← Start over
+                  </button>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <button
+                      onClick={generate}
+                      disabled={requiredEmpty > 0}
+                      className="ab-btn-primary inline-flex items-center gap-2.5 rounded-[11px] px-[22px] py-3 text-[14.5px] font-bold"
+                    >
+                      Draft the agreement
+                      <ArrowRight size={17} strokeWidth={2.2} className={requiredEmpty > 0 ? "" : "ab-nudge"} />
+                    </button>
+                    {requiredEmpty > 0 && (
+                      <span className="text-[12px] text-danger">
+                        Fill the {requiredEmpty} required field{requiredEmpty > 1 ? "s" : ""} first.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── SCREEN: draft (generating + done) ──────────────── */}
+            {isDraft && (
+              <div className="ab-rise">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-[26px] font-bold text-ink">Your agreement</h2>
+                    <p className="mt-1.5 text-[13px] text-muted">{contractType}</p>
+                  </div>
+                  {phase === "generating" && (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-hero px-3.5 py-2 text-[12.5px] font-semibold text-muted">
+                      <span className="ab-pulse-fast h-2 w-2 rounded-full bg-accent" />
+                      Drafting…
+                    </span>
+                  )}
+                </div>
+
+                {phase === "done" && (
+                  <div className="ab-pop mt-4 flex items-center gap-2.5 rounded-[12px] border border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,var(--color-surface))] px-3.5 py-3">
+                    <Image src="/handshake.png" alt="" width={26} height={26} className="object-contain" />
+                    <span className="text-[13px] text-ink">
+                      <strong>Ready to sign.</strong> Review and edit below, then export or send for
+                      signature.
+                    </span>
+                  </div>
+                )}
+
+                {phase === "generating" && !agreement ? (
+                  <div className="mt-4 flex items-center gap-3 rounded-[14px] border border-line bg-surface px-6 py-8 text-muted">
+                    <span className="ab-spin h-5 w-5 rounded-full border-2 border-line border-t-accent" />
+                    <span className="text-[14px]">{GENERATE_STEPS[statusStep]}</span>
+                  </div>
+                ) : phase === "generating" ? (
+                  <pre
+                    ref={agreementPreRef}
+                    className="mt-4 max-h-[56vh] overflow-y-auto whitespace-pre-wrap break-words rounded-[14px] border border-line bg-surface px-7 py-6 font-contract text-[14px] leading-[1.75] text-ink shadow-[0_12px_30px_rgba(0,0,0,0.05)]"
+                  >
+                    {agreement}
+                    <span className="ab-blink ml-0.5 inline-block w-2 bg-accent">&nbsp;</span>
+                  </pre>
+                ) : (
+                  <div className="mt-4">
+                    <AgreementEditor initialText={agreement} onChange={setAgreement} />
+                    <div className="mt-[18px]">
+                      <button
+                        onClick={reset}
+                        className="rounded-[11px] border border-line bg-transparent px-[18px] py-2.5 text-[13.5px] font-semibold text-muted transition-colors hover:border-muted hover:text-ink"
+                      >
+                        ← Draft another
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {error && <p className="mt-3 text-[13px] text-red-600">{error}</p>}
+              </div>
             )}
           </div>
-        </section>
-      )}
+        </div>
+      </div>
 
-      {/* Step 3 — the agreement */}
-      {(phase === "generating" || phase === "done") && (
-        <section ref={agreementRef} className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Your agreement</h2>
-          </div>
-          {phase === "generating" && !agreement ? (
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-8 text-gray-500 shadow-sm">
-              <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-              <span>{status}</span>
-            </div>
-          ) : phase === "generating" ? (
-            <pre
-              ref={agreementPreRef}
-              className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-white p-8 font-serif text-[15px] leading-relaxed text-gray-900 shadow-sm"
-            >
-              {agreement}
-              <span className="animate-pulse">▍</span>
-            </pre>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500">
-                Edit the draft directly — click into the text to make changes before you sign.
-              </p>
-              <AgreementEditor initialText={agreement} onChange={setAgreement} />
-            </>
-          )}
-        </section>
-      )}
-    </main>
+      {guideTab && <GuidesModal initialTab={guideTab} onClose={() => setGuideTab(null)} />}
+    </div>
   );
 }
