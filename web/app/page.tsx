@@ -7,8 +7,28 @@ import AgreementEditor from "./_components/AgreementEditor";
 
 type Phase = "idle" | "extracting" | "form" | "generating" | "done";
 
+// Rotating status lines shown while a phase is waiting on the model. The last
+// line is safe to linger on since it just reads as "still working".
+const EXTRACT_STEPS = [
+  "Parsing the PDF…",
+  "Reading the correspondence…",
+  "Figuring out the contract type…",
+  "Working out which details are needed…",
+  "Almost done…",
+];
+
+const GENERATE_STEPS = [
+  "Re-reading the correspondence…",
+  "Structuring the contract…",
+  "Drafting the clauses…",
+  "Filling in the agreed terms…",
+  "Adding the standard provisions…",
+  "Almost there…",
+];
+
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("idle");
+  const [status, setStatus] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [contractType, setContractType] = useState("");
   const [fields, setFields] = useState<ContractField[]>([]);
@@ -32,6 +52,26 @@ export default function Home() {
     const el = agreementPreRef.current;
     if (phase === "generating" && el) el.scrollTop = el.scrollHeight;
   }, [agreement, phase]);
+
+  // cycle through status lines while a phase waits on the model; generation
+  // messages stop as soon as the first streamed token arrives
+  const streaming = agreement.length > 0;
+  useEffect(() => {
+    const steps =
+      phase === "extracting"
+        ? EXTRACT_STEPS
+        : phase === "generating" && !streaming
+          ? GENERATE_STEPS
+          : null;
+    if (!steps) return;
+    let i = 0;
+    setStatus(steps[0]);
+    const id = setInterval(() => {
+      i = Math.min(i + 1, steps.length - 1);
+      setStatus(steps[i]);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [phase, streaming]);
 
   async function handleFile(f: File) {
     if (f.type !== "application/pdf") {
@@ -155,7 +195,7 @@ export default function Home() {
           {phase === "extracting" ? (
             <>
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-              <span className="text-gray-500">Reading the correspondence…</span>
+              <span className="text-gray-500">{status}</span>
             </>
           ) : (
             <>
@@ -250,7 +290,12 @@ export default function Home() {
               </button>
             )}
           </div>
-          {phase === "generating" ? (
+          {phase === "generating" && !agreement ? (
+            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-8 text-gray-500 shadow-sm">
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+              <span>{status}</span>
+            </div>
+          ) : phase === "generating" ? (
             <pre
               ref={agreementPreRef}
               className="max-h-[70vh] overflow-y-auto whitespace-pre-wrap rounded-xl border border-gray-200 bg-white p-8 font-serif text-[15px] leading-relaxed text-gray-900 shadow-sm"
